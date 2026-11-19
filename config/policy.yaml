@@ -1,0 +1,25 @@
+# Lantern policy. Thresholds, event weights, and the action per tier.
+# The backend loads this; GET /api/policy exposes the agent-facing slice.
+
+stream_score_threshold: 0.70     # a flow at/above this, to a non-sanctioned host, is AI
+risk_window_hours: 24            # rolling window for per-user risk
+risk_saturation: 300             # weight sum that maps to ~95/100 (saturating curve)
+risk_at_risk: 50                 # a user at/above this score counts as "at risk"
+
+weights:                         # added to a user's rolling risk per event
+  shadow_domain: 15
+  high_stream_unknown: 25
+  local_ai: 30
+  sensitive_egress: 40
+
+tiers:                           # event class -> action
+  sanctioned:    allow
+  shadow_domain: coach
+  high_stream:   redact
+  local_ai:      block
+  sensitive:     block
+
+override_allowed: [redact, coach]   # user may proceed after a typed justification
+
+# Policy version. Bump when rules change so agents can tell they are stale.
+version: 1

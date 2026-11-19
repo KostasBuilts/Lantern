@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lantern — Shadow AI & DLP Console</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='13' r='6' fill='%23e8833a'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <svg class="lamp" viewBox="0 0 24 24" aria-hidden="true">
+        <defs><radialGradient id="g" cx="50%" cy="55%" r="55%">
+          <stop offset="0%" stop-color="#ffd9a8"/><stop offset="55%" stop-color="#e8833a"/><stop offset="100%" stop-color="#b85e1f"/>
+        </radialGradient></defs>
+        <path d="M9 2h6v2h-1v1.2A7 7 0 0 1 19 12v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6a7 7 0 0 1 5-6.8V4H9V2z" fill="none" stroke="#8a99ab" stroke-width="1.2"/>
+        <circle cx="12" cy="13" r="4.6" fill="url(#g)"/>
+      </svg>
+      <div>
+        <div class="name">Lantern</div>
+        <div class="sub">Shadow AI detection &amp; DLP</div>
+      </div>
+    </div>
+    <div class="spacer"></div>
+    <span class="pill" id="policyPill" title="Active policy version">policy v–</span>
+    <span class="pill" id="livePill"><span class="live-dot"></span><span id="liveText">connecting…</span></span>
+    <button class="icon-btn" id="themeBtn" title="Toggle light / dark" aria-label="Toggle theme">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+    </button>
+  </header>
+
+  <main>
+    <div class="filters">
+      <label>Window</label>
+      <div class="seg" id="rangeSeg" role="group" aria-label="Time window">
+        <button data-hours="6" aria-pressed="false">6h</button>
+        <button data-hours="24" aria-pressed="true">24h</button>
+      </div>
+      <input class="search" id="eventSearch" type="search" placeholder="Filter events by user, host, app…" />
+      <div class="spacer" style="flex:1"></div>
+      <span class="muted" id="updated"></span>
+    </div>
+
+    <!-- hero + stat tiles -->
+    <section class="grid row-stats">
+      <div class="card hero">
+        <div class="label">Open alerts</div>
+        <div class="value" id="heroAlerts">—</div>
+        <div class="foot"><b id="heroCritical">0</b> critical in the last 24h · <span id="heroUsers">0</span> users at risk</div>
+      </div>
+      <div class="card tile"><div class="label">Events (24h)</div><div class="value" id="tEvents">—</div><div class="foot">across all sensors</div></div>
+      <div class="card tile"><div class="label">Shadow AI apps</div><div class="value" id="tShadow">—</div><div class="foot">unsanctioned, seen in inventory</div></div>
+      <div class="card tile"><div class="label">Local AI (24h)</div><div class="value" id="tLocal">—</div><div class="foot">on-device model runs</div></div>
+      <div class="card tile alarm"><div class="label">Blocked egress (24h)</div><div class="value" id="tEgress">—</div><div class="foot">sensitive data stopped</div></div>
+    </section>
+
+    <!-- chart + live feed -->
+    <section class="grid row-main">
+      <div class="card">
+        <div class="head">
+          <h2>Detections over time</h2>
+          <div class="tools">
+            <button class="ghost-btn" id="chartViewChart" aria-pressed="true">Chart</button>
+            <button class="ghost-btn" id="chartViewTable" aria-pressed="false">Table</button>
+          </div>
+        </div>
+        <div class="chart-wrap" id="chartWrap">
+          <svg id="chart" viewBox="0 0 800 260" preserveAspectRatio="none" role="img" aria-label="Detections over time by type"></svg>
+          <div class="tooltip" id="chartTip"></div>
+        </div>
+        <div class="legend" id="chartLegend"></div>
+        <div id="chartTable" class="table-scroll hidden" style="margin-top:10px"></div>
+      </div>
+
+      <div class="card">
+        <div class="head"><h2>Live alerts</h2><span class="muted" id="feedCount"></span></div>
+        <div class="feed" id="feed"><div class="empty">Waiting for alerts…</div></div>
+      </div>
+    </section>
+
+    <!-- inventory + users -->
+    <section class="grid row-tables">
+      <div class="card">
+        <div class="head"><h2>AI app inventory</h2><span class="muted" id="appCount"></span></div>
+        <div class="table-scroll">
+          <table id="appTable"><thead><tr>
+            <th>App / endpoint</th><th>Category</th><th>Status</th><th class="num">Events</th><th>Last seen</th>
+          </tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+      <div class="card">
+        <div class="head"><h2>Users at risk</h2><span class="muted">rolling 24h</span></div>
+        <div class="table-scroll">
+          <table id="userTable"><thead><tr>
+            <th>User</th><th>Risk</th><th class="num">Alerts</th><th class="num">Events</th><th>Last seen</th>
+          </tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- events -->
+    <section class="grid">
+      <div class="card">
+        <div class="head"><h2>Recent events</h2><span class="muted" id="eventCount"></span></div>
+        <div class="table-scroll">
+          <table id="eventTable"><thead><tr>
+            <th>Time</th><th>Kind</th><th>User</th><th>Host</th><th>App / endpoint</th><th>Action</th><th class="num">Score</th>
+          </tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

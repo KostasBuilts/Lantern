@@ -1,0 +1,36 @@
+# Lantern indicator catalog. Loaded by the backend and shipped to sensors/agents.
+# The known-AI domains and the sanctioned (never-alert) list.
+
+sanctioned:                 # approved endpoints; never alert on these
+  - gateway.lantern.local
+  - lantern.local
+
+categories:
+  chat_ui:
+    - chatgpt.com
+    - chat.openai.com
+    - claude.ai
+    - gemini.google.com
+    - copilot.microsoft.com
+    - chat.deepseek.com
+    - perplexity.ai
+  api:
+    - api.openai.com
+    - api.anthropic.com
+    - generativelanguage.googleapis.com
+    - api.x.ai
+    - api.deepseek.com
+    - api.mistral.ai
+  model_hub:
+    - huggingface.co
+    - hf.co
+    - cdn-lfs.huggingface.co
+    - ollama.com
+    - registry.ollama.ai
+    - modelscope.cn
+    - lmstudio.ai
+  aggregator:
+    - openrouter.ai
+    - together.ai
+    - replicate.com
+    - groq.com
