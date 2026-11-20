@@ -1,59 +1,59 @@
-// AI gateway (the "safe path"): an OpenAI-compatible endpoint that redacts
-// sensitive data from prompts before forwarding, and logs metadata only.
-// If no upstream is configured it returns a canned reply so the redaction
-// path is demonstrable standalone.
+// AI gateway (the "safe path"): an OpenAI-compatible endpoint that scores each
+// prompt (rules + local LLM), then enforces the policy: allow, warn, redact or block.
+// Only metadata and the redacted prompt are stored. With no upstream configured it
+// returns a canned reply, so the whole path can be demonstrated standalone.
 import { Router } from "express";
-import { redact, scan, summarise } from "./detectors.js";
+import { decidePrompt, verdictOf } from "./risk.js";
 import { processEvent } from "./engine.js";
+import { redact } from "./detectors.js";
 
 export const gateway = Router();
-const UPSTREAM = process.env.LANTERN_UPSTREAM || null;   // e.g. http://localhost:11434/v1/chat/completions
+const UPSTREAM = process.env.LANTERN_UPSTREAM || null;       // e.g. https://api.openai.com/v1/chat/completions
+const UPSTREAM_KEY = process.env.LANTERN_UPSTREAM_KEY || "";
+
+const NOTICE = {
+  allow: "Your prompt was sent to the model.",
+  warn: "Your prompt was sent, but it was flagged. Please use an approved model and avoid company or client data.",
+  redact: "Sensitive values were removed from your prompt before it was sent.",
+  block: "Your prompt was blocked and did not leave the company.",
+};
 
 gateway.post("/v1/chat/completions", async (req, res) => {
   const body = req.body || {};
   const user = req.get("x-lantern-user") || body.user || "unknown";
   const host = req.get("x-lantern-host") || "gateway";
   const messages = Array.isArray(body.messages) ? body.messages : [];
+  const model = String(body.model || "unknown");
+  const text = messages.map((m) => (typeof m.content === "string" ? m.content : "")).join("\n");
 
-  // redact every message; collect hit types (never raw values)
-  let allHits = [];
-  for (const m of messages) {
-    if (typeof m.content === "string") {
-      allHits = allHits.concat(scan(m.content));
-      m.content = redact(m.content).text;
-    }
-  }
-  const hits = summarise(allHits);
+  const d = await decidePrompt(text, model);
+  const verdict = { ...verdictOf(d), redacted_hits: d.hits, notice: NOTICE[d.action] };
 
-  // record a prompt event -> engine classifies/alerts
-  processEvent({
-    ts: new Date().toISOString(), src: "gateway", host, user, kind: "prompt",
-    app: "gateway", detail: { model: body.model || "unknown", hits, tokens_in: approxTokens(messages) },
-  });
+  processEvent({ ts: new Date().toISOString(), src: "gateway", host, user, kind: "prompt", app: model,
+    detail: { model, hits: d.hits, decision: verdict, preview: d.redacted.slice(0, 200), tokens_in: Math.ceil(text.length / 4) } });
 
-  // forward (redacted) or return a canned response
+  if (d.action === "block")
+    return res.status(403).json({ error: { type: "lantern_blocked", message: `${NOTICE.block} ${d.explanation}` }, lantern: verdict });
+  if (d.action === "redact")
+    for (const m of messages) if (typeof m.content === "string") m.content = redact(m.content).text;
+  verdict.sent_prompt = messages.map((m) => (typeof m.content === "string" ? m.content : "")).join("\n");
+
   if (UPSTREAM) {
     try {
-      const r = await fetch(UPSTREAM, { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...body, messages }) });
-      res.status(r.status);
-      r.body.pipe ? r.body.pipe(res) : res.send(await r.text());
-      return;
+      const r = await fetch(UPSTREAM, { method: "POST",
+        headers: { "content-type": "application/json", ...(UPSTREAM_KEY ? { authorization: `Bearer ${UPSTREAM_KEY}` } : {}) },
+        body: JSON.stringify({ ...body, messages, stream: false }) });
+      // shortcut: replies are buffered (stream:false); pipe r.body if token streaming to the client matters.
+      const reply = await r.json().catch(() => ({}));
+      return res.status(r.status).json({ ...reply, lantern: verdict });
     } catch (e) {
-      return res.status(502).json({ error: "upstream_unreachable", detail: String(e) });
+      return res.status(502).json({ error: { type: "upstream_unreachable", message: String(e) }, lantern: verdict });
     }
   }
   res.json({
-    id: "lantern-" + Date.now(), object: "chat.completion", model: body.model || "approved-model",
-    lantern: { redacted_hits: hits, note: "No upstream configured; prompt was redacted and logged." },
+    id: "lantern-" + Date.now(), object: "chat.completion", model,
     choices: [{ index: 0, finish_reason: "stop",
-      message: { role: "assistant",
-        content: hits.length
-          ? `Your prompt reached the approved model with ${hits.map(h => h.count + "×" + h.type).join(", ")} redacted.`
-          : "Your prompt reached the approved model. No sensitive data was found." } }],
+      message: { role: "assistant", content: `${NOTICE[d.action]} (No upstream model is configured, so this is a placeholder reply.)` } }],
+    lantern: verdict,
   });
 });
-
-function approxTokens(messages) {
-  return Math.ceil(messages.reduce((n, m) => n + (typeof m.content === "string" ? m.content.length : 0), 0) / 4);
-}

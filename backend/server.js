@@ -4,6 +4,8 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { loadConfig, watchConfig } from "./config.js";
 import { initDb, prepare } from "./db.js";
+import { seedDemo } from "./demo.js";
+import { llmEnabled, assess } from "./risk.js";
 import { ingest } from "./ingest.js";
 import { api } from "./routes.js";
 import { gateway } from "./gateway.js";
@@ -14,6 +16,10 @@ const PORT = process.env.PORT || 8080;
 loadConfig();
 initDb();
 prepare();
+await seedDemo();
+// Load the model now (and retry while it is still downloading) so the first real prompt is fast.
+const warmUp = () => assess("warm-up").then((r) => (r ? console.log("[llm] model ready") : setTimeout(warmUp, 30_000)));
+if (llmEnabled()) warmUp();
 watchConfig(() => {});
 
 const app = express();
@@ -46,4 +52,5 @@ app.listen(PORT, () => {
   console.log(`  dashboard   http://localhost:${PORT}/`);
   console.log(`  ingest      POST http://localhost:${PORT}/ingest   (NDJSON)`);
   console.log(`  gateway     POST http://localhost:${PORT}/gateway/v1/chat/completions`);
+  console.log(`  risk LLM    ${llmEnabled() ? `${process.env.LLM_MODEL || "qwen2.5:3b"} at ${process.env.LLM_BASE_URL}` : "off (rules only); set LLM_BASE_URL"}`);
 });

@@ -24,9 +24,27 @@ function loadOne(name) {
 export function loadConfig() {
   state.indicators = loadOne("indicators.yaml");
   state.policy = loadOne("policy.yaml");
+  state.directory = loadOne("directory.yaml") || {};
   state.domainIndex = buildDomainIndex(state.indicators);
   state.sanctioned = new Set((state.indicators.sanctioned || []).map((d) => d.toLowerCase()));
+  state.people = new Map();
+  for (const p of state.directory.users || []) {
+    state.people.set(p.user, p);
+    for (const ip of p.ips || []) state.people.set(ip, p);
+  }
   return state;
+}
+
+// Sensor events carry an IP, gateway events a username: both resolve to a person + team.
+export function identify(userOrIp) {
+  const p = state.people.get(userOrIp);
+  return p ? { user: p.user, team: p.team } : { user: userOrIp, team: "unassigned" };
+}
+
+export function isApprovedModel(model) {
+  const list = state.policy.approved_models || [];
+  const m = String(model || "").toLowerCase();
+  return list.some((a) => m === a.toLowerCase() || m.startsWith(a.toLowerCase() + "-"));
 }
 
 // Match a hostname against the catalog, honouring subdomains (api.x.ai matches x.ai entries too).

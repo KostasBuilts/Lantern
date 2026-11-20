@@ -1,10 +1,54 @@
-# Lantern policy. Thresholds, event weights, and the action per tier.
-# The backend loads this; GET /api/policy exposes the agent-facing slice.
+# Lantern policy. Thresholds, risk ratings and the action per risk level.
+# The backend hot-reloads this file; GET /api/policy exposes the agent-facing slice.
 
 stream_score_threshold: 0.70     # a flow at/above this, to a non-sanctioned host, is AI
 risk_window_hours: 24            # rolling window for per-user risk
-risk_saturation: 300             # weight sum that maps to ~95/100 (saturating curve)
+risk_saturation: 100             # weight sum that maps to ~63/100 (saturating curve)
 risk_at_risk: 50                 # a user at/above this score counts as "at risk"
+dedup_window_seconds: 300        # one alert per user/app/reason in this window
+
+# ---- risk-based enforcement (gateway) ----
+# Final risk = max(rule risk, LLM risk); the LLM can raise risk, never lower it.
+risk_actions:                    # lowest risk that triggers each action; below "warn" = allow
+  warn: 25
+  redact: 50
+  block: 80
+injection_action: block          # prompt injection, whatever the risk score
+
+data_risk:                       # rule risk when the detectors find this data type in a prompt
+  SECRET: 90                     # API keys, private keys
+  CARD: 75
+  IBAN: 70
+  AMKA: 65                       # Greek social security number
+  AFM: 55                        # Greek tax id
+unapproved_model_bonus: 25       # added when the prompt targets a model not listed below
+
+llm_category_risk:               # risk for the category the LLM assigns to a prompt's content
+  none: 0
+  source_code: 55
+  client_data: 70
+  confidential: 70
+  pii: 70
+  financial: 75
+  credentials: 90
+  prompt_injection: 90
+  shadow_ai: 25
+
+approved_models:                 # models employees may use through the gateway
+  - gpt-4o-mini
+  - llama3.1
+  - qwen2.5
+
+# ---- AI tool inventory risk ratings (0-100), by indicator category ----
+category_risk:
+  chat_ui: 45
+  api: 50
+  model_hub: 35
+  aggregator: 60
+  unknown_ai: 70                 # found only by its streaming behaviour
+  local: 50
+  unapproved_model: 60
+  approved_model: 10
 
 weights:                         # added to a user's rolling risk per event
   shadow_domain: 15
@@ -12,14 +56,14 @@ weights:                         # added to a user's rolling risk per event
   local_ai: 30
   sensitive_egress: 40
 
-tiers:                           # event class -> action
+tiers:                           # network/endpoint event class -> recommended action
   sanctioned:    allow
-  shadow_domain: coach
-  high_stream:   redact
+  shadow_domain: warn
+  high_stream:   warn
   local_ai:      block
   sensitive:     block
 
-override_allowed: [redact, coach]   # user may proceed after a typed justification
+override_allowed: [redact, warn]    # user may proceed after a typed justification
 
 # Policy version. Bump when rules change so agents can tell they are stale.
-version: 1
+version: 2

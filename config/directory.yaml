@@ -1,0 +1,11 @@
+# Synthetic employee directory (fictional people, no real personal data).
+# Maps sensor IPs and gateway usernames to a person and a team, so analysts can ask per-team questions.
+users:
+  - { user: maria.k,    team: Finance,     ips: [10.0.0.21] }
+  - { user: nikos.p,    team: Finance,     ips: [10.0.0.22] }
+  - { user: eleni.g,    team: Sales,       ips: [10.0.0.31] }
+  - { user: giorgos.a,  team: Sales,       ips: [10.0.0.32] }
+  - { user: dimitra.s,  team: Engineering, ips: [10.0.0.41] }
+  - { user: kostas.m,   team: Engineering, ips: [10.0.0.42] }
+  - { user: sofia.l,    team: Legal,       ips: [10.0.0.51] }
+  - { user: demo.user,  team: Engineering, ips: [127.0.0.1] }

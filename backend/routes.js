@@ -3,6 +3,7 @@ import { Router } from "express";
 import { db } from "./db.js";
 import { config } from "./config.js";
 import { userRisk, riskScore } from "./engine.js";
+import { toolRisk } from "./risk.js";
 import { addClient, clientCount } from "./bus.js";
 
 export const api = Router();
@@ -16,13 +17,12 @@ api.get("/stats", (_req, res) => {
   const openAlerts = q(`SELECT COUNT(*) c FROM alerts WHERE ack=0`).c;
   const eventsToday = q(`SELECT COUNT(*) c FROM events WHERE ts>=?`, since24).c;
   const shadowApps = q(`SELECT COUNT(*) c FROM apps WHERE sanctioned=0`).c;
-  const localAi = q(`SELECT COUNT(*) c FROM events WHERE cls='local_ai' AND ts>=?`, since24).c;
-  const blockedEgress = q(`SELECT COUNT(*) c FROM events WHERE cls='sensitive' AND ts>=?`, since24).c;
+    const blockedEgress = q(`SELECT COUNT(*) c FROM events WHERE action='block' AND ts>=?`, since24).c;
   const highStream = q(`SELECT COUNT(*) c FROM events WHERE cls='high_stream' AND ts>=?`, since24).c;
   const perUser = db.prepare(`SELECT SUM(weight) t FROM events WHERE ts>=? GROUP BY user`).all(since24);
   const atRiskThreshold = config.policy.risk_at_risk ?? 50;
   const usersAtRisk = perUser.filter((u) => riskScore(u.t) >= atRiskThreshold).length;
-  res.json({ openAlerts, eventsToday, shadowApps, localAi, blockedEgress, highStream, usersAtRisk,
+  res.json({ openAlerts, eventsToday, shadowApps, blockedEgress, highStream, usersAtRisk,
     clients: clientCount(), policyVersion: config.policy.version });
 });
 
@@ -33,8 +33,8 @@ api.get("/timeseries", (req, res) => {
   const now = Date.now(), span = hours * 3600_000, width = span / buckets;
   const since = new Date(now - span).toISOString();
   const rows = db.prepare(`SELECT ts, cls FROM events WHERE ts>=?`).all(since);
-  const series = { shadow_domain: [], high_stream: [], local_ai: [], sensitive: [] };
-  const counts = Array.from({ length: buckets }, () => ({ shadow_domain: 0, high_stream: 0, local_ai: 0, sensitive: 0 }));
+  const series = { shadow_domain: [], high_stream: [], injection: [], sensitive: [] };
+  const counts = Array.from({ length: buckets }, () => ({ shadow_domain: 0, high_stream: 0, injection: 0, sensitive: 0 }));
   for (const r of rows) {
     const i = Math.min(buckets - 1, Math.floor((Date.parse(r.ts) - (now - span)) / width));
     if (i >= 0 && counts[i][r.cls] !== undefined) counts[i][r.cls]++;
@@ -49,15 +49,16 @@ api.get("/timeseries", (req, res) => {
 
 // --- app inventory ---
 api.get("/apps", (_req, res) => {
-  res.json(db.prepare(`SELECT name,category,sanctioned,first_seen,last_seen,event_count
-                       FROM apps ORDER BY sanctioned ASC, event_count DESC`).all());
+  const apps = db.prepare(`SELECT name,category,sanctioned,first_seen,last_seen,event_count FROM apps`).all();
+  for (const a of apps) a.risk = toolRisk(a.category, a.sanctioned);
+  res.json(apps.sort((a, b) => b.risk - a.risk || b.event_count - a.event_count));
 });
 
 // --- per-user risk table ---
 api.get("/users", (_req, res) => {
   const since = new Date(Date.now() - (config.policy.risk_window_hours || 24) * 3600_000).toISOString();
   const rows = db.prepare(`
-    SELECT user,
+    SELECT user, MAX(team) team,
            COUNT(*) events,
            SUM(CASE WHEN action!='allow' THEN 1 ELSE 0 END) alerts,
            COALESCE(SUM(weight),0) weightSum,
@@ -101,7 +102,7 @@ api.post("/alerts/:id/ack", (req, res) => {
 api.get("/policy", (_req, res) => {
   const p = config.policy;
   res.json({ version: p.version, stream_score_threshold: p.stream_score_threshold,
-    risk_window_hours: p.risk_window_hours, tiers: p.tiers, override_allowed: p.override_allowed,
+    risk_window_hours: p.risk_window_hours, tiers: p.tiers, approved_models: p.approved_models, override_allowed: p.override_allowed,
     categories: config.indicators.categories, sanctioned: config.indicators.sanctioned });
 });
 
@@ -116,3 +117,5 @@ api.get("/stream", (req, res) => {
   const ping = setInterval(() => { try { res.write(`:keepalive\n\n`); } catch {} }, 15000);
   req.on("close", () => clearInterval(ping));
 });
+
+api.get("/directory", (_req, res) => res.json(config.directory.users || []));

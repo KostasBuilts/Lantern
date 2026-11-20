@@ -1,6 +1,7 @@
 // Detection + policy engine: classify each event into a tier, score it,
 // map it to an action + severity, persist, and raise an alert when needed.
-import { config, matchDomain, isSanctioned } from "./config.js";
+import { config, matchDomain, isSanctioned, identify } from "./config.js";
+import { toolRisk, severityFor } from "./risk.js";
 import { db, stmts } from "./db.js";
 import { publish } from "./bus.js";
 
@@ -15,8 +16,15 @@ function classify(ev) {
   switch (ev.kind) {
     case "local_ai":
       return { tier: pol.tiers.local_ai, cls: "local_ai" };
-    case "usb_copy":
     case "prompt": {
+      const dec = d.decision;                         // decided by the gateway (risk.js)
+      if (!dec) return { tier: "allow", cls: "clean" };
+      const cls = dec.injection ? "injection"
+        : dec.risk >= (pol.risk_actions?.redact ?? 50) ? "sensitive"
+        : dec.approved ? "clean" : "shadow_domain";
+      return { tier: dec.action, cls };
+    }
+    case "usb_copy": {
       const hits = (d.hits || []).length || (d.hits_count || 0);
       if (hits > 0) return { tier: pol.tiers.sensitive, cls: "sensitive" };
       return { tier: "allow", cls: "clean" };
@@ -43,10 +51,21 @@ function classify(ev) {
   }
 }
 
-const SEVERITY = { sanctioned: "good", clean: "good", observe: "good",
-  shadow_domain: "warning", high_stream: "serious", local_ai: "serious", sensitive: "critical" };
 const WEIGHT_KEY = { shadow_domain: "shadow_domain", high_stream: "high_stream_unknown",
-  local_ai: "local_ai", sensitive: "sensitive_egress" };
+  local_ai: "local_ai", sensitive: "sensitive_egress", injection: "sensitive_egress" };
+
+// Rule risk (0-100) of a network/endpoint detection; prompts carry the gateway's decision.
+function riskOf(ev, cls, category) {
+  const d = ev.detail || {};
+  if (d.decision) return d.decision.risk;
+  switch (cls) {
+    case "shadow_domain": return Math.min(100, toolRisk(category) + (d.up_bytes ? 30 : 0));
+    case "high_stream": return category === "unknown_ai" ? toolRisk("unknown_ai") : Math.min(100, toolRisk(category) + 15);
+    case "local_ai": return toolRisk("local");
+    case "sensitive": return 80;
+    default: return 0;
+  }
+}
 
 function weightFor(cls) {
   const k = WEIGHT_KEY[cls];
@@ -68,55 +87,64 @@ const APP_KINDS = new Set(["dns", "tls", "flow", "local_ai", "file_open", "promp
 
 // Process one validated event: classify, persist, update inventory, maybe alert.
 export function processEvent(ev) {
+  const { user, team } = identify(ev.user);
+  ev = { ...ev, user };
   const { tier, cls } = classify(ev);
   const action = tier;                                  // tier name == action name here
   const detailJson = JSON.stringify(ev.detail || {});
   const score = ev.detail?.stream_score ?? ev.score ?? 0;
 
-  const severity = SEVERITY[cls] || "good";
   const weight = weightFor(cls);
-
-  const info = stmts().insertEvent.run(ev.ts, ev.src, ev.host, ev.user, ev.kind,
-    appName(ev), score, tier, action, cls, weight, detailJson);
-  const eventId = Number(info.lastInsertRowid);
 
   // App inventory: only AI endpoints belong here. Ordinary business traffic
   // (github, slack, a CDN) is not shadow AI and must not pollute the list.
   const host = ev.detail?.sni || ev.detail?.qname || ev.detail?.dst;
-  // A prompt recorded by our own gateway IS the approved route, so it counts as sanctioned.
-  const viaGateway = ev.kind === "prompt" || ev.src === "gateway";
-  const sanctioned = (host && isSanctioned(host)) || viaGateway ? 1 : 0;
+  const isPrompt = ev.kind === "prompt";
+  const approvedModel = Boolean(ev.detail?.decision?.approved);
+  const sanctioned = (host && isSanctioned(host)) || (isPrompt && approvedModel) ? 1 : 0;
   const known = ev.detail?.matched_category || matchDomain(host);
   const isLocal = ev.kind === "local_ai" || ev.kind === "file_open";
   const category = known
     || (isLocal ? "local" : null)
-    || (viaGateway ? "gateway" : null)
+    || (isPrompt ? (approvedModel ? "approved_model" : "unapproved_model") : null)
     || (cls === "high_stream" ? "unknown_ai" : null);   // found by streaming behaviour
   const isAiApp = APP_KINDS.has(ev.kind) && (known || sanctioned || isLocal
-    || ev.kind === "prompt" || cls === "high_stream");
+    || isPrompt || cls === "high_stream");
+  const risk = riskOf(ev, cls, category);
+  const severity = severityFor(risk);
+
+  const info = stmts().insertEvent.run(ev.ts, ev.src, ev.host, ev.user, team, ev.kind,
+    appName(ev), score, risk, tier, action, cls, weight, detailJson);
+  const eventId = Number(info.lastInsertRowid);
   if (isAiApp)
     stmts().upsertApp.run({ name: appName(ev), category, sanctioned, ts: ev.ts });
 
   let alert = null;
-  if (action !== "allow") {
-    const reason = reasonText(ev, cls);
-    const a = stmts().insertAlert.run(ev.ts, ev.host, ev.user, tier, action, severity, reason, appName(ev), eventId);
-    alert = { id: Number(a.lastInsertRowid), ts: ev.ts, host: ev.host, user: ev.user,
-      tier, action, severity, reason, app: appName(ev), event_id: eventId };
+  const reason = action !== "allow" ? reasonText(ev, cls) : null;
+  // One alert per (user, app, reason) per dedup window: a browser tab opens many connections.
+  const since = new Date(Date.parse(ev.ts) - (config.policy.dedup_window_seconds ?? 300) * 1000).toISOString();
+  if (reason && !stmts().recentAlert.get(ev.user, appName(ev), reason, since)) {
+    const a = stmts().insertAlert.run(ev.ts, ev.host, ev.user, team, tier, action, severity, risk, reason, appName(ev), eventId);
+    alert = { id: Number(a.lastInsertRowid), ts: ev.ts, host: ev.host, user: ev.user, team,
+      tier, action, severity, risk, reason, app: appName(ev), event_id: eventId };
     publish("alert", alert);
   }
 
-  const outEvent = { id: eventId, ts: ev.ts, src: ev.src, host: ev.host, user: ev.user,
-    kind: ev.kind, app: appName(ev), score, tier, action, severity, weight };
+  const outEvent = { id: eventId, ts: ev.ts, src: ev.src, host: ev.host, user: ev.user, team,
+    kind: ev.kind, app: appName(ev), score, risk, tier, action, severity, weight };
   publish("event", outEvent);
   return outEvent;
 }
 
 function reasonText(ev, cls) {
   const d = ev.detail || {};
+  if (d.decision) return d.decision.explanation;
   switch (cls) {
-    case "shadow_domain": return `Shadow AI domain ${d.sni || d.qname || d.dst || ""}`.trim();
-    case "high_stream": return `LLM streaming pattern to ${d.sni || d.dst || "unknown host"} (score ${(d.stream_score ?? 0).toFixed(2)})`;
+    case "shadow_domain": {
+      const up = d.up_bytes ? ` (uploaded ${(d.up_bytes / 1048576).toFixed(1)} MiB)` : "";
+      return `Shadow AI domain ${d.sni || d.qname || d.dst || ""}${up}`.trim();
+    }
+    case "high_stream": return `LLM streaming pattern to ${d.sni || d.dst || "unknown host"} (score ${Number(d.stream_score ?? ev.score ?? 0).toFixed(2)})`;
     case "local_ai": return `Local model ${d.model_file || (d.models || []).join(",") || ""} via ${d.binary || "unknown"}`.trim();
     case "sensitive": {
       const types = (d.hits || []).map((h) => h.type || h).join(", ");

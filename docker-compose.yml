@@ -1,0 +1,72 @@
+# docker compose up --build   ->  dashboard on http://localhost:8080
+services:
+  backend:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/app/config:ro      # edit YAML on the host; the backend hot-reloads it
+      - lantern-data:/data
+    environment:
+      # Risk LLM: local Ollama by default, so inspected prompts never leave the machine.
+      # Any OpenAI-compatible API works (set these in .env, see .env.example).
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://ollama:11434/v1}
+      LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LANTERN_UPSTREAM: ${LANTERN_UPSTREAM:-}           # optional real model behind the gateway
+      LANTERN_UPSTREAM_KEY: ${LANTERN_UPSTREAM_KEY:-}
+      LANTERN_DEMO: ${LANTERN_DEMO:-1}                  # synthetic demo data on first start
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:0.12.6
+    volumes:
+      - ollama-models:/root/.ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: 24h         # keep the model loaded between prompts
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      retries: 20
+    restart: unless-stopped
+
+  ollama-pull:                       # one-shot: download the model (~2 GB, first run only)
+    image: ollama/ollama:0.12.6
+    environment:
+      OLLAMA_HOST: ollama:11434
+    entrypoint: ["ollama", "pull", "${LLM_MODEL:-qwen2.5:3b}"]
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+
+  squid:                             # the egress proxy every employee must use
+    image: ubuntu/squid:6.10-24.10_edge
+    ports:
+      - "3128:3128"
+    volumes:
+      - ./config/squid.conf:/etc/squid/squid.conf:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # lets the demo reach scripts/fake_llm.py on the host
+    restart: unless-stopped
+
+  sensor:
+    build: ./net_sensor
+    network_mode: "service:squid"    # shares the proxy's network: sees every employee <-> proxy connection
+    cap_add: [NET_RAW, NET_ADMIN]
+    # Watch only the proxy port: the CONNECT request names the destination, the tunnel carries the traffic shape.
+    command: ["-p", "3128", "-f", "tcp port 3128", "-Z", "nobody"]
+    volumes:
+      - ./config:/config:ro
+    environment:
+      INGEST_URL: http://backend:8080/ingest
+    depends_on:
+      squid:
+        condition: service_started
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  lantern-data:
+  ollama-models:

@@ -20,9 +20,11 @@ export function initDb() {
       src       TEXT NOT NULL,
       host      TEXT NOT NULL,
       user      TEXT NOT NULL,
+      team      TEXT,
       kind      TEXT NOT NULL,
       app       TEXT,
       score     REAL DEFAULT 0,
+      risk      INTEGER DEFAULT 0,          -- 0-100, rules + LLM
       tier      TEXT,
       action    TEXT,
       cls       TEXT,                 -- event class (shadow_domain, local_ai, ...)
@@ -48,29 +50,31 @@ export function initDb() {
       ts        TEXT NOT NULL,
       host      TEXT,
       user      TEXT,
+      team      TEXT,
       tier      TEXT,
       action    TEXT,
       severity  TEXT,                 -- good|warning|serious|critical
+      risk      INTEGER DEFAULT 0,
       reason    TEXT,
       app       TEXT,
       event_id  INTEGER,
       ack       INTEGER DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS ix_alerts_ts ON alerts(ts);
-
-    CREATE TABLE IF NOT EXISTS docs_index (
-      doc_id       TEXT PRIMARY KEY,
-      fingerprints TEXT               -- JSON array
-    );
   `);
+  // Databases created before team/risk existed: add the columns (fails harmlessly if present).
+  for (const sql of ["ALTER TABLE events ADD COLUMN team TEXT", "ALTER TABLE events ADD COLUMN risk INTEGER DEFAULT 0",
+    "ALTER TABLE alerts ADD COLUMN team TEXT", "ALTER TABLE alerts ADD COLUMN risk INTEGER DEFAULT 0"]) {
+    try { db.exec(sql); } catch { /* column exists */ }
+  }
 }
 
 // Prepared statements (built after initDb).
 let S;
 export function prepare() {
   S = {
-    insertEvent: db.prepare(`INSERT INTO events (ts,src,host,user,kind,app,score,tier,action,cls,weight,detail)
-                             VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`),
+    insertEvent: db.prepare(`INSERT INTO events (ts,src,host,user,team,kind,app,score,risk,tier,action,cls,weight,detail)
+                             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`),
     upsertApp: db.prepare(`
       INSERT INTO apps (name,category,sanctioned,first_seen,last_seen,event_count)
       VALUES (@name,@category,@sanctioned,@ts,@ts,1)
@@ -78,8 +82,9 @@ export function prepare() {
         last_seen=@ts, event_count=event_count+1,
         category=COALESCE(apps.category,@category),
         sanctioned=@sanctioned`),
-    insertAlert: db.prepare(`INSERT INTO alerts (ts,host,user,tier,action,severity,reason,app,event_id)
-                             VALUES (?,?,?,?,?,?,?,?,?)`),
+    insertAlert: db.prepare(`INSERT INTO alerts (ts,host,user,team,tier,action,severity,risk,reason,app,event_id)
+                             VALUES (?,?,?,?,?,?,?,?,?,?,?)`),
+    recentAlert: db.prepare(`SELECT 1 FROM alerts WHERE user=? AND app=? AND reason=? AND ts>=? LIMIT 1`),
   };
   return S;
 }
