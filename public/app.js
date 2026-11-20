@@ -214,6 +214,14 @@ async function loadApps() {
       el("td", { class: "muted", text: ago(a.last_seen) + " ago" }),
     ]));
   }
+  filterLists();
+}
+
+// Search also narrows the feed, inventory and users lists (events filter their own data in loadEvents).
+function filterLists() {
+  const q = state.search.toLowerCase();
+  for (const r of document.querySelectorAll("#feed .feed-item, #appTable tbody tr, #userTable tbody tr"))
+    r.style.display = !q || r.textContent.toLowerCase().includes(q) ? "" : "none";
 }
 
 function riskColor(v) { return v >= 70 ? cssvar("--critical") : v >= 40 ? cssvar("--serious") : cssvar("--muted"); }
@@ -232,13 +240,14 @@ async function loadUsers() {
       el("td", { class: "muted", text: ago(u.last_seen) + " ago" }),
     ]));
   }
+  filterLists();
 }
 
 const ACTION_COLOR = { allow: "--good", warn: "--warning", redact: "--serious", block: "--critical" };
 async function loadEvents() {
   const evs = await api("/api/events?limit=120");
   const q = state.search.toLowerCase();
-  const rows = evs.filter((e) => !q || [e.user, e.host, e.app, e.kind].some((f) => (f || "").toLowerCase().includes(q)));
+  const rows = evs.filter((e) => !q || [e.user, e.host, e.app, e.kind, e.action].some((f) => (f || "").toLowerCase().includes(q)));
   const tb = $("#eventTable tbody"); tb.replaceChildren();
   $("#eventCount").textContent = `${rows.length} shown`;
   if (!rows.length) { tb.append(el("tr", {}, el("td", { colspan: 7, class: "empty", text: "No matching events." }))); return; }
@@ -273,6 +282,7 @@ function addFeedItem(a, flash = true) {
   ]);
   feed.prepend(item);
   while (feed.children.length > 60) feed.lastElementChild.remove();
+  filterLists();
 }
 
 async function loadFeed() {
@@ -313,7 +323,7 @@ function wire() {
   chartBtn.addEventListener("click", () => { chartBtn.setAttribute("aria-pressed", "true"); tableBtn.setAttribute("aria-pressed", "false"); $("#chartWrap").classList.remove("hidden"); $("#chartLegend").classList.remove("hidden"); $("#chartTable").classList.add("hidden"); });
   tableBtn.addEventListener("click", () => { tableBtn.setAttribute("aria-pressed", "true"); chartBtn.setAttribute("aria-pressed", "false"); $("#chartWrap").classList.add("hidden"); $("#chartLegend").classList.add("hidden"); $("#chartTable").classList.remove("hidden"); });
 
-  let st; $("#eventSearch").addEventListener("input", (e) => { clearTimeout(st); st = setTimeout(() => { state.search = e.target.value; loadEvents(); }, 200); });
+  let st; $("#eventSearch").addEventListener("input", (e) => { clearTimeout(st); st = setTimeout(() => { state.search = e.target.value; loadEvents(); filterLists(); }, 200); });
 
   $("#themeBtn").addEventListener("click", () => {
     const next = document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light";
