@@ -146,7 +146,7 @@ This is a resource trade-off, not a claim of parity with larger models: smaller 
 ## Protecting the data we inspect
 
 - **The data stays in-house:** the LLM runs locally in Docker. Only the not redacted text is ever sent to the answer AI.
-- **Data minimisation:** prompts are stored as metadata plus a 200-character *redacted* preview. Detector hits keep a mask and a hash, never the value.
+
 - **Synthetic data only:** the demo users, clients and IDs are made up. The IDs are checksum-valid but fictional.
 
 ## Limitations
