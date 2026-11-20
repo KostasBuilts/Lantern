@@ -53,7 +53,14 @@ services:
     volumes:
       - ./config/squid.conf:/etc/squid/squid.conf:ro
     extra_hosts:
-      - "host.docker.internal:host-gateway"   # lets the demo reach scripts/fake_llm.py on the host
+      - "host.docker.internal:host-gateway"   # optional: reach a service running on the host machine
+    restart: unless-stopped
+
+  fake-llm:                          # demo: an AI service no blocklist knows, reachable only through the proxy
+    image: python:3.12-slim-bookworm
+    command: ["python3", "-u", "/app/fake_llm.py"]
+    volumes:
+      - ./scripts/fake_llm.py:/app/fake_llm.py:ro
     restart: unless-stopped
 
   sensor:

@@ -35,10 +35,33 @@ Keys go only in `.env`, which is git-ignored.
    you see the action, the risk score and the LLM's explanation, plus exactly what was sent on to the model. For example,
    the IBAN is replaced by `[IBAN-1]`. Allowed messages get a real answer, streamed from the model.
 2. Switch the model to one marked *not approved* and send the same prompt: the risk goes up and the action becomes stricter.
-3. Browse through the proxy: `curl -x http://localhost:3128 https://chatgpt.com`. A *Shadow AI domain* alert appears within a second.
-4. Run `python3 scripts/fake_llm.py` (a fake LLM on an unknown server), then
-   `curl -sk -x http://localhost:3128 https://host.docker.internal:8443 -d "$(printf 'prompt %.0s' {1..40})"`.
-   The sensor recognises the streamed reply **by its traffic pattern alone**, even though it is encrypted inside the proxy tunnel.
+3. **Detect a known AI tool at the proxy.** Keep the dashboard (**http://localhost:8080**) open. In a terminal on the
+   machine that runs Docker, send a request through the proxy, the way an employee's browser would:
+   ```sh
+   curl -sS -o /dev/null -w 'HTTP %{http_code}\n' -x http://localhost:3128 https://chatgpt.com
+   ```
+   It prints an HTTP status (whatever chatgpt.com answers; any code is fine). Within a second, **Live alerts** shows
+   *Shadow AI domain chatgpt.com*. This needs internet access.
+4. **Detect an AI service that no list knows, by its traffic alone.** `docker compose up` also started `fake-llm`, a small
+   HTTPS server ([`scripts/fake_llm.py`](scripts/fake_llm.py)) that streams its reply token by token, as chat AIs do.
+   It is not on any list of AI domains. Send it a prompt through the proxy:
+   ```sh
+   curl -sSk -x http://localhost:3128 https://fake-llm:8443 -d '{"prompt": "Summarise our Q3 sales numbers"}'
+   ```
+   You should see 80 lines like `data: {"token": "word0 "}` arrive over about 3 seconds. About 2 seconds after the
+   last one, **Live alerts** shows *LLM streaming pattern to fake-llm (score 1.00)*, and `fake-llm` appears in the
+   **AI app inventory** as an unknown AI. The traffic is encrypted end to end: the sensor never sees the words, only the
+   rhythm of the packets (a request, then many small packets at a steady pace).
+   (`-x` sends the request through the proxy, `-k` accepts the fake server's self-signed certificate, `-sS` hides the
+   progress bar but still shows errors.)
+
+   | If you see | It means | Fix |
+   |---|---|---|
+   | `CONNECT tunnel failed, response 503` | The proxy can't reach `fake-llm` | `docker compose up -d fake-llm`, then `docker compose logs fake-llm` should say `fake LLM on port 8443` |
+   | `CONNECT tunnel failed, response 403` | The proxy refused your address: it only serves private networks | Run curl on the machine that runs Docker, with `localhost` as above |
+   | `Failed to connect to localhost port 3128` | The proxy isn't running | `docker compose up -d squid sensor` |
+   | No new alert when you run it again | One alert per user, app and reason every 5 minutes (`dedup_window_seconds` in `config/policy.yaml`) | Each run still appears under **Recent events** |
+
 5. The live feed, chart, AI tool inventory (with risk ratings) and per-user risk update as you go.
 
 ## Main features
