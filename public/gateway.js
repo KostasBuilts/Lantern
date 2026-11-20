@@ -119,7 +119,7 @@ function renderPolicy(p) {
   $("#scale").replaceChildren(...bands.map(([k, lo, hi]) => el("div", { class: "band", style: `flex:${hi - lo};--c:${cssvar(ACTION_COLOR[k])}` },
     [el("span", { class: "band-name", text: k }), el("span", { class: "band-range", text: `${lo}–${Math.min(hi - 1, 100)}` })])));
   $("#rules").replaceChildren(...[
-    "Checks for IBANs, card numbers, Greek AMKA and AFM, API keys and private keys, with checksums.",
+    "Checks for IBANs, card numbers, Greek AMKA and AFM, API keys and private keys (with checksums), plus phone numbers, emails, street addresses and client names.",
     "A local AI model, running inside the company, spots client data, confidential plans, personal data and source code.",
     `Models that aren't approved add +${p.unapproved_model_bonus ?? 25} risk.`,
     (p.injection_action || "block") === "block" ? "Prompt injection is always blocked." : `Prompt injection always gets: ${p.injection_action}.`,

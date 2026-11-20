@@ -90,7 +90,8 @@ export function toolRisk(category, sanctioned) {
 }
 
 const INJECTION = /\b(ignore|disregard|forget)\b.{0,30}\b(previous|prior|above|all|your)\b.{0,20}\b(instructions?|prompts?|rules)\b|\b(reveal|print|show)\b.{0,20}\b(system prompt|hidden instructions)\b|\bsystem override\b|\byou are now\b.{0,20}\b(dan|unfiltered|jailbroken|developer mode)\b/i;
-const TYPE_CATEGORY = { SECRET: "credentials", CARD: "financial", IBAN: "financial", AMKA: "pii", AFM: "pii" };
+const TYPE_CATEGORY = { SECRET: "credentials", CARD: "financial", IBAN: "financial", AMKA: "pii", AFM: "pii",
+  PHONE: "pii", EMAIL: "pii", ADDRESS: "pii", PERSON: "pii" };
 
 // Decide what the gateway does with one prompt.
 // The decision fields stored with a prompt event and returned to the caller.

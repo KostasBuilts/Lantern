@@ -21,6 +21,10 @@ data_risk:                       # rule risk when the detectors find this data t
   IBAN: 70
   AMKA: 65                       # Greek social security number
   AFM: 55                        # Greek tax id
+  PHONE: 55                      # Greek or international phone number
+  ADDRESS: 55                    # street address
+  PERSON: 50                     # name after a cue: "my client ...", "Mr ...", "κ. ..."
+  EMAIL: 45                      # below redact on its own; redacted when the LLM rates the prompt pii
 unapproved_model_bonus: 25       # added when the prompt targets a model not listed below
 
 llm_category_risk:               # risk for the category the LLM assigns to a prompt's content

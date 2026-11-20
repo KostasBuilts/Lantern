@@ -4,7 +4,11 @@
 import { createHash } from "node:crypto";
 
 function sha16(s) { return createHash("sha256").update(s).digest("hex").slice(0, 16); }
-function mask(raw) { return "****" + raw.replace(/\s/g, "").slice(-4); }
+function mask(raw, type) {
+  if (type === "PERSON" || type === "ADDRESS") return raw[0] + "***";      // the tail of a name would leak it
+  if (type === "EMAIL") return "***@" + raw.split("@")[1];
+  return "****" + raw.replace(/\s/g, "").slice(-4);
+}
 
 // ---------- checksums ----------
 export function luhnOk(digits) {
@@ -74,10 +78,35 @@ const RE_TOKEN = /[A-Za-z0-9+/=_-]{24,}/g;
 const RE_9 = /(?<!\d)\d{9}(?!\d)/g;
 const RE_11 = /(?<!\d)\d{11}(?!\d)/g;
 
+// Personal data without a checksum: contact details, street addresses, and names
+// that follow a cue ("my client ...", "Mr ...", "κ. ..."). The LLM judges context,
+// but only what these find can be redacted.
+const RE_EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
+const RE_PHONE = [
+  /(?<![\d+])(?:(?:\+|00)30[ -]?)?(?:69\d|2\d\d)[ -]?\d{3}[ -]?\d{4}(?!\d)/g,             // Greek mobile / landline
+  /(?<![\d+])(?:\+|00)[1-9]\d{0,2}[ -]?(?:\(?\d{1,4}\)?[ -]?){2,4}\d{2,4}(?!\d)/g,          // international, with + or 00
+  /(?<=(?<!\p{L})(?:phone|tel|mobile|cell|call|κινητ|τηλ)\S*\.?:?\s*(?:on |at |no\.? )?)\d[\d -]{5,14}\d(?!\d)/giu,   // cued
+];
+const W = "\\p{L}[\\p{L}'.-]*";
+const STREET = "(?:str(?:eet)?|st|ave(?:nue)?|road|rd|blvd|boulevard|lane|ln|drive|dr|square|sq|odos|οδός|οδ|λεωφ(?:όρος)?|πλατεία)";
+const RE_ADDRESS = [
+  new RegExp(`(?<![\\p{L}\\d])\\d{1,4}[a-zα-ω]?,?\\s+((?:${W}\\s+){1,3})${STREET}(?!\\p{L})\\.?`, "giu"),        // 24 Spooner Str.
+  new RegExp(`(?<!\\p{L})((?:${W}\\s+){1,3})${STREET}\\.?\\s+\\d{1,4}[a-zα-ω]?(?![\\p{L}\\d])`, "giu"),         // Ermou Str 24
+  new RegExp(`(?<!\\p{L})(?:odos|οδός|οδ\\.|λεωφ\\.|λεωφόρος)\\s+((?:${W}\\s+){1,3})\\d{1,4}(?![\\p{L}\\d])`, "giu"), // οδός Ερμού 24
+];
+const RE_PERSON = /(?<!\p{L})(?:(?:my|our|your|his|her|their)\s+(?:client|customer|patient|tenant|colleague|employee|lawyer|doctor)|(?:client|customer|patient|employee)\s*:|mrs?\.?|ms\.?|named|name(?:\s*(?:is|:))?|κ(?:ος|α)?\.|πελάτη[ςσ]?|ασθενή[ςσ]?)\s+(\p{L}[\p{L}'-]+)(?:\s+(\p{L}[\p{L}'-]+))?/giud;
+const STOP = new Set(("a an the this that these those is was are be been has have had will would can could should " +
+  "who which what when where why how about above after before from for with without to on at in into of by and or but " +
+  "not no so if then than my our your his her their its it me us them he she they we you i him " +
+  "wants want asked asks said says sent sends called calls lives lived just also still please " +
+  "data record records details info information email emails phone number account accounts address list name names " +
+  "side library app code request requests id ids support service team company").split(" "));
+const allNamey = (s) => s.trim().split(/\s+/).every((w) => !STOP.has(w.toLowerCase().replace(/\.$/, "")));
+
 function hasCtx(text, start, rx, win = 40) { return rx.test(text.slice(Math.max(0, start - win), start)); }
 function overlaps(a, hits) { return hits.some((o) => !(a.end <= o.start || a.start >= o.end)); }
-function push(hits, type, m, conf, raw) {
-  const h = { type, start: m.index, end: m.index + raw.length, confidence: conf, masked: mask(raw), value_hash: sha16(raw) };
+function push(hits, type, m, conf, raw, start = m.index) {
+  const h = { type, start, end: start + raw.length, confidence: conf, masked: mask(raw, type), value_hash: sha16(raw) };
   if (!overlaps(h, hits)) hits.push(h);
 }
 
@@ -103,6 +132,21 @@ export function scan(text) {
   while ((m = RE_11.exec(text))) if (amkaOk(m[0])) push(hits, "AMKA", m, hasCtx(text, m.index, CTX_AMKA) ? 0.95 : 0.5, m[0]);
   RE_9.lastIndex = 0;
   while ((m = RE_9.exec(text))) if (afmOk(m[0])) push(hits, "AFM", m, hasCtx(text, m.index, CTX_AFM) ? 0.95 : 0.3, m[0]);
+  RE_EMAIL.lastIndex = 0;
+  while ((m = RE_EMAIL.exec(text))) push(hits, "EMAIL", m, 0.95, m[0]);
+  for (const rx of RE_PHONE) { rx.lastIndex = 0; while ((m = rx.exec(text))) push(hits, "PHONE", m, 0.8, m[0]); }
+  for (const rx of RE_ADDRESS) {
+    rx.lastIndex = 0;
+    while ((m = rx.exec(text))) if (allNamey(m[1])) push(hits, "ADDRESS", m, 0.7, m[0].replace(/[\s,]+$/, ""));
+  }
+  RE_PERSON.lastIndex = 0;
+  while ((m = RE_PERSON.exec(text))) {
+    if (STOP.has(m[1].toLowerCase())) continue;
+    if (/name$/i.test(m[0].slice(0, m.indices[1][0] - m.index).trim()) && !/^\p{Lu}/u.test(m[1])) continue;   // bare "name": only before a capital
+    const both = m[2] && !STOP.has(m[2].toLowerCase());
+    const start = m.indices[1][0], end = both ? m.indices[2][1] : m.indices[1][1];
+    push(hits, "PERSON", m, 0.7, text.slice(start, end), start);
+  }
   return hits.sort((a, b) => a.start - b.start);
 }
 
