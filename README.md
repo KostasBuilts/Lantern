@@ -6,6 +6,8 @@ Lantern **finds the AI tools in use**, **catches sensitive data before it reache
 and explains its decision. All employee web traffic goes through a **Squid egress proxy**, where a passive sensor
 spots AI use, including AI services that no blocklist knows about.
 
+> **Prototype notice:** Lantern is not a ready-to-use or production-ready product. Some functionality is incomplete, experimental, or still to be implemented, and the current behavior should not be relied on for production security or data-loss prevention.
+
 ## Run it
 
 ```sh
@@ -135,16 +137,17 @@ The same sensor can also run on a network tap or mirror port (`-i IFACE`), where
 | Rules + qwen2.5 1.5B | 86% | 94% | 100% |
 | **Rules + qwen2.5 3B** (default) | **100%** | **100%** | **100%** |
 
-The rules miss client data and confidential content written in plain prose ("our contract with client Acme…"),
-which is the gap the LLM closes. A 3B model on CPU takes about 3 s per prompt. The set is small and was written by the team, so treat it
-as a regression test rather than proof of real-world accuracy.
+## Why small local models?
+
+Lantern uses `qwen2.5:3b` for risk classification and `qwen2.5:1.5b` for gateway responses. We chose them to keep downloads and hardware requirements modest, making local setup easier to reproduce without dedicated GPUs or paid API access. With the default Ollama configuration, classification runs locally.
+
+This is a resource trade-off, not a claim of parity with larger models: smaller models can be less accurate, contextual, and consistent. Lantern combines AI classification with deterministic rules, and can be configured to use larger models or other inference backends when resources allow.
 
 ## Protecting the data we inspect
 
-- **The data stays in-house:** the LLM runs locally in Docker. Only redacted text is ever sent to it.
+- **The data stays in-house:** the LLM runs locally in Docker. Only the not redacted text is ever sent to the answer AI.
 - **Data minimisation:** prompts are stored as metadata plus a 200-character *redacted* preview. Detector hits keep a mask and a hash, never the value.
 - **Synthetic data only:** the demo users, clients and IDs are made up. The IDs are checksum-valid but fictional.
-- **Passive network sensor, no TLS interception:** the proxy only tunnels HTTPS, and the sensor never decrypts traffic; it drops root once the capture is open.
 
 ## Limitations
 
