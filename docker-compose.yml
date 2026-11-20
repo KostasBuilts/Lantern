@@ -2,6 +2,7 @@
 services:
   backend:
     build: .
+    init: true                       # tini as PID 1: Ctrl+C / docker stop exits at once
     ports:
       - "8080:8080"
     volumes:
@@ -57,6 +58,7 @@ services:
 
   sensor:
     build: ./net_sensor
+    init: true                       # forward.sh is a shell; tini passes it the stop signal
     network_mode: "service:squid"    # shares the proxy's network: sees every employee <-> proxy connection
     cap_add: [NET_RAW, NET_ADMIN]
     # Watch only the proxy port: the CONNECT request names the destination, the tunnel carries the traffic shape.

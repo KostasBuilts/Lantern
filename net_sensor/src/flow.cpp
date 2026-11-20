@@ -304,6 +304,9 @@ void FlowTracker::feed_tcp_hello(Flow& f, const ParsedPacket& p, Ts ts) {
         size_t hdr_len = 0;
         if (f.connect_host.empty() && parse_http_connect(data, len, hdr_len, f.connect_host)) {
             // Explicit proxy: the tunnelled ClientHello follows the CONNECT request.
+            // Name a listed AI target now: if the proxy refuses the tunnel (403) no
+            // hello ever follows, and a blocked attempt is still worth reporting.
+            if (ind_.category_of(f.connect_host)) resolve_identity(f, ts);
             f.have_base = true;
             f.data_base = seq + uint32_t(hdr_len);
             if (hdr_len >= len) return;

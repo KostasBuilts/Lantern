@@ -13,6 +13,7 @@ categories:
     - gemini.google.com
     - copilot.microsoft.com
     - chat.deepseek.com
+    - deepseek.com                # www. and the landing page, not only the chat app
     - perplexity.ai
   api:
     - api.openai.com
