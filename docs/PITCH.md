@@ -139,7 +139,7 @@ A labelled set of 22 synthetic prompts covers every action: harmless, personal d
 ## 8. Live demo script (about 3 minutes)
 
 1. **Dashboard overview:** synthetic company data (fictional people in Finance, Sales, Engineering and Legal), live feed, inventory with risk ratings.
-2. **Gateway playground, "Client IBAN" + an approved model:** result **REDACT**. Show "Sent to the model: … IBAN [IBAN-1]".
+2. **AI Gateway page, "Client IBAN" + an approved model:** result **REDACT**. Show "Sent to the model: … IBAN [IBAN-1]".
 3. **Same prompt, unapproved model (deepseek-chat):** result **BLOCK**. Same data, riskier destination, stricter action.
 4. **"Client contract":** no number to detect, but the LLM recognises client data. *This is what regex alone misses.*
 5. **"Prompt injection":** result **BLOCK**, with the explanation shown.
@@ -157,7 +157,7 @@ A labelled set of 22 synthetic prompts covers every action: harmless, personal d
 | Enforce a policy: allow, redact, warn or block | Risk-based actions, configurable in YAML |
 | Bonus: catch prompt injection | Rule patterns + LLM category, always blocked |
 | Inspectable inventory with risk ratings, configurable policy | Dashboard inventory; `policy.yaml`, `indicators.yaml`, `directory.yaml` |
-| Live demo: a sensitive prompt detected, acted on and explained | Gateway playground on the dashboard |
+| Live demo: a sensitive prompt detected, acted on and explained | AI Gateway page: a chat with a verdict on every message |
 | Explain how you measured accuracy | Labelled eval set, rerunnable in one command |
 | Explain how you protect the data you inspect | See next slide |
 

@@ -13,8 +13,12 @@ services:
       LLM_BASE_URL: ${LLM_BASE_URL:-http://ollama:11434/v1}
       LLM_MODEL: ${LLM_MODEL:-qwen2.5:3b}
       LLM_API_KEY: ${LLM_API_KEY:-}
-      LANTERN_UPSTREAM: ${LANTERN_UPSTREAM:-}           # optional real model behind the gateway
+      # The model behind the gateway: the local model by default, so the chat gives real answers offline.
+      LANTERN_UPSTREAM: ${LANTERN_UPSTREAM:-http://ollama:11434/v1/chat/completions}
       LANTERN_UPSTREAM_KEY: ${LANTERN_UPSTREAM_KEY:-}
+      # A separate, smaller chat model: on CPU, sharing the risk model would evict its cached
+      # instructions after every chat and slow each risk check from ~3 s to ~20 s. Empty = pass the chosen model through.
+      LANTERN_UPSTREAM_MODEL: ${LANTERN_UPSTREAM_MODEL-qwen2.5:1.5b}
       LANTERN_DEMO: ${LANTERN_DEMO:-1}                  # synthetic demo data on first start
     restart: unless-stopped
 
@@ -30,11 +34,12 @@ services:
       retries: 20
     restart: unless-stopped
 
-  ollama-pull:                       # one-shot: download the model (~2 GB, first run only)
+  ollama-pull:                       # one-shot: download the risk and chat models (~3 GB, first run only)
     image: ollama/ollama:0.12.6
     environment:
       OLLAMA_HOST: ollama:11434
-    entrypoint: ["ollama", "pull", "${LLM_MODEL:-qwen2.5:3b}"]
+    entrypoint: ["/bin/sh", "-c", "ollama pull \"$$0\" && { [ -z \"$$1\" ] || ollama pull \"$$1\"; }",
+                 "${LLM_MODEL:-qwen2.5:3b}", "${LANTERN_UPSTREAM_MODEL-qwen2.5:1.5b}"]
     depends_on:
       ollama:
         condition: service_healthy

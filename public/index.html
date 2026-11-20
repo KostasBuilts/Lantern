@@ -22,7 +22,12 @@
         <div class="sub">Shadow AI detection &amp; DLP</div>
       </div>
     </div>
+    <nav class="nav" aria-label="Pages">
+      <a href="/" aria-current="page">Dashboard</a>
+      <a href="/gateway.html">AI Gateway</a>
+    </nav>
     <div class="spacer"></div>
+    <span class="pill" id="llmPill" title="The GenAI model that judges every prompt's risk"><span class="live-dot"></span><span class="pill-text">Risk AI…</span></span>
     <span class="pill" id="policyPill" title="Active policy version">policy v–</span>
     <span class="pill" id="livePill"><span class="live-dot"></span><span id="liveText">connecting…</span></span>
     <button class="icon-btn" id="themeBtn" title="Toggle light / dark" aria-label="Toggle theme">
@@ -47,12 +52,12 @@
       <div class="card hero">
         <div class="label">Open alerts</div>
         <div class="value" id="heroAlerts">—</div>
-        <div class="foot"><b id="heroCritical">0</b> blocked in the last 24h · <span id="heroUsers">0</span> users at risk</div>
+        <div class="foot"><b id="heroCritical">0</b> blocked in the last <span class="win">24h</span> · <span id="heroUsers">0</span> users at risk</div>
       </div>
-      <div class="card tile"><div class="label">Events (24h)</div><div class="value" id="tEvents">—</div><div class="foot">across all sensors</div></div>
-      <div class="card tile"><div class="label">Shadow AI apps</div><div class="value" id="tShadow">—</div><div class="foot">unsanctioned, seen in inventory</div></div>
-      <div class="card tile"><div class="label">Unknown AI (24h)</div><div class="value" id="tLocal">—</div><div class="foot">found by streaming behaviour</div></div>
-      <div class="card tile alarm"><div class="label">Blocked egress (24h)</div><div class="value" id="tEgress">—</div><div class="foot">prompts stopped at the gateway</div></div>
+      <div class="card tile"><div class="label">Events (<span class="win">24h</span>)</div><div class="value" id="tEvents">—</div><div class="foot">across all sensors</div></div>
+      <div class="card tile"><div class="label">Shadow AI apps</div><div class="value" id="tShadow">—</div><div class="foot">unsanctioned, active in the window</div></div>
+      <div class="card tile"><div class="label">Unknown AI (<span class="win">24h</span>)</div><div class="value" id="tLocal">—</div><div class="foot">found by streaming behaviour</div></div>
+      <div class="card tile alarm"><div class="label">Blocked egress (<span class="win">24h</span>)</div><div class="value" id="tEgress">—</div><div class="foot">prompts stopped at the gateway</div></div>
     </section>
 
     <!-- chart + live feed -->
@@ -79,22 +84,6 @@
       </div>
     </section>
 
-    <!-- gateway playground -->
-    <section class="grid row-single">
-      <div class="card">
-        <div class="head"><h2>Try the AI gateway</h2><span class="muted">scored, then allowed, warned, redacted or blocked</span></div>
-        <div class="form-row">
-          <label>User <select id="pgUser"></select></label>
-          <label>Model <select id="pgModel"></select></label>
-        </div>
-        <div class="chips" id="pgExamples" aria-label="Example prompts"></div>
-        <label class="sr-only" for="pgText">Prompt</label>
-        <textarea id="pgText" rows="4" placeholder="Type a prompt an employee might send to an AI tool…"></textarea>
-        <button class="primary-btn" id="pgSend">Send through gateway</button>
-        <div id="pgResult" class="result hidden" aria-live="polite"></div>
-      </div>
-    </section>
-
     <!-- inventory + users -->
     <section class="grid row-tables">
       <div class="card">
@@ -106,7 +95,7 @@
         </div>
       </div>
       <div class="card">
-        <div class="head"><h2>Users at risk</h2><span class="muted">rolling 24h</span></div>
+        <div class="head"><h2>Users at risk</h2><span class="muted">last <span class="win">24h</span></span></div>
         <div class="table-scroll">
           <table id="userTable"><thead><tr>
             <th>User</th><th>Team</th><th>Risk</th><th class="num">Alerts</th><th class="num">Events</th><th>Last seen</th>

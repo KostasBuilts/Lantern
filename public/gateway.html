@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lantern — AI Gateway</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Ccircle cx='12' cy='13' r='6' fill='%23e8833a'/%3E%3C/svg%3E" />
+</head>
+<body class="app">
+  <header class="topbar">
+    <div class="brand">
+      <svg class="lamp" viewBox="0 0 24 24" aria-hidden="true">
+        <defs><radialGradient id="g" cx="50%" cy="55%" r="55%">
+          <stop offset="0%" stop-color="#ffd9a8"/><stop offset="55%" stop-color="#e8833a"/><stop offset="100%" stop-color="#b85e1f"/>
+        </radialGradient></defs>
+        <path d="M9 2h6v2h-1v1.2A7 7 0 0 1 19 12v6a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-6a7 7 0 0 1 5-6.8V4H9V2z" fill="none" stroke="#8a99ab" stroke-width="1.2"/>
+        <circle cx="12" cy="13" r="4.6" fill="url(#g)"/>
+      </svg>
+      <div>
+        <div class="name">Lantern</div>
+        <div class="sub">Safe AI gateway</div>
+      </div>
+    </div>
+    <nav class="nav" aria-label="Pages">
+      <a href="/">Dashboard</a>
+      <a href="/gateway.html" aria-current="page">AI Gateway</a>
+    </nav>
+    <div class="spacer"></div>
+    <span class="pill" id="llmPill" title="The GenAI model that judges every message's risk before it leaves"><span class="live-dot"></span><span class="pill-text">Risk AI…</span></span>
+    <span class="pill" id="chatPill" title="The model that answers allowed messages"><span class="live-dot"></span><span class="pill-text">Chat…</span></span>
+    <button class="icon-btn" id="themeBtn" title="Toggle light / dark" aria-label="Toggle theme">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z"/></svg>
+    </button>
+  </header>
+
+  <main class="gw">
+    <section class="card chat">
+      <div class="chat-bar">
+        <label>Signed in as <select id="gwUser"></select></label>
+        <label>Model <select id="gwModel"></select></label>
+        <div class="spacer" style="flex:1"></div>
+        <button class="ghost-btn" id="gwNew" type="button">New chat</button>
+      </div>
+
+      <div class="thread" id="thread" aria-live="polite">
+        <div class="welcome" id="welcome">
+          <h2>Ask an AI model, safely</h2>
+          <p>Every message is checked before it leaves the company. Sensitive values are removed,
+             risky prompts are stopped, and you always see why.</p>
+          <div class="chips" id="gwExamples" aria-label="Example prompts"></div>
+        </div>
+      </div>
+
+      <form class="composer" id="composer">
+        <label class="sr-only" for="gwText">Message</label>
+        <textarea id="gwText" rows="3" placeholder="Message the model…  (Enter to send, Shift+Enter for a new line)"></textarea>
+        <div class="composer-foot">
+          <span class="draft" id="draft" aria-live="polite"></span>
+          <button class="primary-btn" id="gwSend" type="submit">Send</button>
+        </div>
+      </form>
+    </section>
+
+    <aside class="side">
+      <section class="card">
+        <div class="head"><h2>How your messages are checked</h2></div>
+        <div class="scale" id="scale"></div>
+        <ul class="rules" id="rules"></ul>
+        <div class="label-sm">Approved models</div>
+        <div class="chips static" id="approved"></div>
+      </section>
+
+      <section class="card">
+        <div class="head"><h2>Your recent prompts</h2><span class="muted">last 7 days</span></div>
+        <div id="history" class="history"></div>
+      </section>
+
+      <section class="card">
+        <div class="head"><h2>Use it from your code</h2><button class="ghost-btn" id="copySnippet" type="button">Copy</button></div>
+        <p class="muted small">Any OpenAI-compatible tool works: point its base URL at the gateway.</p>
+        <pre class="snippet" id="snippet"></pre>
+      </section>
+
+      <p class="muted small privacy">Conversations stay in this browser tab. Lantern keeps only the decision and a short redacted preview.</p>
+    </aside>
+  </main>
+
+  <script src="/gateway.js" type="module"></script>
+</body>
+</html>

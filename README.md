@@ -14,21 +14,26 @@ docker compose up --build
 ```
 
 Open **http://localhost:8080**. Employees' browsers (or a PAC/WPAD file, or group policy) point to the proxy at
-**`<host>:3128`**. The first start downloads the risk model (qwen2.5 3B, about 2 GB) in the background. Until the
-download finishes, decisions use the rules alone, and the dashboard works straight away with synthetic demo data.
+**`<host>:3128`**. The first start downloads two local models in the background: the risk model (qwen2.5 3B, about 2 GB)
+and a smaller chat model that answers through the gateway (qwen2.5 1.5B, about 1 GB). Until the download finishes,
+decisions use the rules alone, and the dashboard works straight away with synthetic demo data.
+The **AI Gateway** page is at **http://localhost:8080/gateway.html**. The **Risk AI** pill in the top bar shows whether
+the GenAI risk model is answering (green) or decisions are falling back to the rules alone (red).
 
 | Optional setting (`.env`, see `.env.example`) | |
 |---|---|
 | `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` | Use the OpenAI API (or any OpenAI-compatible API) for risk decisions instead of the local model |
-| `LANTERN_UPSTREAM`, `LANTERN_UPSTREAM_KEY` | Forward allowed prompts to a real model, so the gateway returns real answers |
+| `LANTERN_UPSTREAM`, `LANTERN_UPSTREAM_KEY`, `LANTERN_UPSTREAM_MODEL` | The model that answers through the gateway. Default: the local chat model. Point it at OpenAI for fast answers in a live demo |
 | `LANTERN_DEMO=0` | Start with an empty database |
 
 Keys go only in `.env`, which is git-ignored.
 
 ## A 3-minute demo
 
-1. **Try the AI gateway** card: pick an example (*Client IBAN*, *Client contract*, *API key*, *Prompt injection*), a user and a model, then press *Send*.
-   You see the action, the risk score and the LLM's explanation, plus exactly what was sent on to the model. For example, the IBAN is replaced by `[IBAN-1]`.
+1. Open the **AI Gateway** page (top bar): a chat that goes through Lantern. Pick an example (*Client IBAN*, *Client contract*,
+   *API key*, *Prompt injection*), a user and a model. While you type, a quick check shows what the rules found. Press *Send*:
+   you see the action, the risk score and the LLM's explanation, plus exactly what was sent on to the model. For example,
+   the IBAN is replaced by `[IBAN-1]`. Allowed messages get a real answer, streamed from the model.
 2. Switch the model to one marked *not approved* and send the same prompt: the risk goes up and the action becomes stricter.
 3. Browse through the proxy: `curl -x http://localhost:3128 https://chatgpt.com`. A *Shadow AI domain* alert appears within a second.
 4. Run `python3 scripts/fake_llm.py` (a fake LLM on an unknown server), then
@@ -76,7 +81,8 @@ flowchart LR
 | Backend: Node 22, Express, built-in SQLite, live updates over Server-Sent Events (SSE) | `backend/` |
 | Risk decision + LLM client | `backend/risk.js` |
 | Gateway enforcement | `backend/gateway.js` |
-| Dashboard: plain HTML/JS, no build step, light and dark themes, works on narrow screens | `public/` |
+| Dashboard: plain HTML/JS, no build step, light and dark themes, works on narrow screens; the time window applies to every panel | `public/index.html`, `app.js` |
+| AI Gateway page: chat through the gateway with streamed answers, a quick check while typing, the policy in plain words, your own recent decisions, and a code snippet for any OpenAI-compatible tool (`/gateway/v1`, including `/v1/models`) | `public/gateway.html`, `gateway.js` |
 | Policy, AI domains, directory, proxy | `config/` |
 
 ### How a prompt is decided
@@ -122,7 +128,8 @@ as a regression test rather than proof of real-world accuracy.
 - The proxy must be **mandatory**: the firewall should block direct outbound traffic, including UDP 443 (QUIC), so browsers fall back to the proxy.
 - The sensor sees **an IP address, not a person**: the directory maps known IPs to users. Squid proxy authentication would give real usernames.
 - Connections from the Docker host itself show Docker's gateway IP; clients on the LAN keep their own IP addresses.
-- The gateway sends upstream replies back in one piece; it doesn't stream them token by token.
+- Chat history lives in the browser tab. Each turn, the rules scan the whole conversation, but the risk LLM judges only the newest message (earlier ones were judged when they were sent).
+- On CPU, chat answers take 5–15 s. With `LANTERN_UPSTREAM` pointed at a hosted model they are near-instant.
 
 ## Running without Docker
 

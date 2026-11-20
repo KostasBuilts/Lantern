@@ -3,33 +3,39 @@ import { Router } from "express";
 import { db } from "./db.js";
 import { config } from "./config.js";
 import { userRisk, riskScore } from "./engine.js";
-import { toolRisk } from "./risk.js";
+import { toolRisk, llmStatus } from "./risk.js";
+import { chatStatus } from "./gateway.js";
 import { addClient, clientCount } from "./bus.js";
 
 export const api = Router();
 
 function parseDetail(row) { try { row.detail = JSON.parse(row.detail); } catch {} return row; }
+// The dashboard's time window (?hours=, 1h..14d, default 24h) and list size (?limit=), both clamped.
+const clamp = (v, lo, hi, dflt) => Math.min(Math.max(Math.floor(+v) || dflt, lo), hi);
+const sinceOf = (req) => new Date(Date.now() - clamp(req.query.hours, 1, 24 * 14, 24) * 3600_000).toISOString();
+const limitOf = (req) => clamp(req.query.limit, 1, 1000, 100);
 
 // --- headline stats for the hero + stat tiles ---
-api.get("/stats", (_req, res) => {
-  const since24 = new Date(Date.now() - 24 * 3600_000).toISOString();
+api.get("/stats", (req, res) => {
+  const since = sinceOf(req);
   const q = (sql, ...a) => db.prepare(sql).get(...a);
-  const openAlerts = q(`SELECT COUNT(*) c FROM alerts WHERE ack=0`).c;
-  const eventsToday = q(`SELECT COUNT(*) c FROM events WHERE ts>=?`, since24).c;
-  const shadowApps = q(`SELECT COUNT(*) c FROM apps WHERE sanctioned=0`).c;
-    const blockedEgress = q(`SELECT COUNT(*) c FROM events WHERE action='block' AND ts>=?`, since24).c;
-  const highStream = q(`SELECT COUNT(*) c FROM events WHERE cls='high_stream' AND ts>=?`, since24).c;
-  const perUser = db.prepare(`SELECT SUM(weight) t FROM events WHERE ts>=? GROUP BY user`).all(since24);
+  const openAlerts = q(`SELECT COUNT(*) c FROM alerts WHERE ack=0 AND ts>=?`, since).c;
+  const events = q(`SELECT COUNT(*) c FROM events WHERE ts>=?`, since).c;
+  const shadowApps = q(`SELECT COUNT(DISTINCT a.name) c FROM apps a JOIN events e ON e.app=a.name
+                        WHERE a.sanctioned=0 AND e.ts>=?`, since).c;
+  const blockedEgress = q(`SELECT COUNT(*) c FROM events WHERE action='block' AND ts>=?`, since).c;
+  const highStream = q(`SELECT COUNT(*) c FROM events WHERE cls='high_stream' AND ts>=?`, since).c;
+  const perUser = db.prepare(`SELECT SUM(weight) t FROM events WHERE ts>=? GROUP BY user`).all(since);
   const atRiskThreshold = config.policy.risk_at_risk ?? 50;
   const usersAtRisk = perUser.filter((u) => riskScore(u.t) >= atRiskThreshold).length;
-  res.json({ openAlerts, eventsToday, shadowApps, blockedEgress, highStream, usersAtRisk,
-    clients: clientCount(), policyVersion: config.policy.version });
+  res.json({ openAlerts, events, shadowApps, blockedEgress, highStream, usersAtRisk,
+    clients: clientCount(), policyVersion: config.policy.version, llm: llmStatus });
 });
 
 // --- events over time, bucketed, split by severity (for the area/line chart) ---
 api.get("/timeseries", (req, res) => {
-  const hours = Math.min(+req.query.hours || 24, 24 * 14);
-  const buckets = Math.min(+req.query.buckets || 48, 200);
+  const hours = clamp(req.query.hours, 1, 24 * 14, 24);
+  const buckets = clamp(req.query.buckets, 1, 200, 48);
   const now = Date.now(), span = hours * 3600_000, width = span / buckets;
   const since = new Date(now - span).toISOString();
   const rows = db.prepare(`SELECT ts, cls FROM events WHERE ts>=?`).all(since);
@@ -47,16 +53,17 @@ api.get("/timeseries", (req, res) => {
   res.json({ labels, series, width });
 });
 
-// --- app inventory ---
-api.get("/apps", (_req, res) => {
-  const apps = db.prepare(`SELECT name,category,sanctioned,first_seen,last_seen,event_count FROM apps`).all();
+// --- app inventory: apps with activity inside the window ---
+api.get("/apps", (req, res) => {
+  const apps = db.prepare(`SELECT a.name, a.category, a.sanctioned, a.first_seen, MAX(e.ts) last_seen, COUNT(*) event_count
+                           FROM apps a JOIN events e ON e.app=a.name WHERE e.ts>=? GROUP BY a.name`).all(sinceOf(req));
   for (const a of apps) a.risk = toolRisk(a.category, a.sanctioned);
   res.json(apps.sort((a, b) => b.risk - a.risk || b.event_count - a.event_count));
 });
 
 // --- per-user risk table ---
-api.get("/users", (_req, res) => {
-  const since = new Date(Date.now() - (config.policy.risk_window_hours || 24) * 3600_000).toISOString();
+api.get("/users", (req, res) => {
+  const since = sinceOf(req);
   const rows = db.prepare(`
     SELECT user, MAX(team) team,
            COUNT(*) events,
@@ -79,18 +86,16 @@ api.get("/users/:user/risk", (req, res) => {
 
 // --- recent events, with optional filters ---
 api.get("/events", (req, res) => {
-  const limit = Math.min(+req.query.limit || 100, 1000);
-  const where = [], args = [];
+  const where = ["ts>=?"], args = [sinceOf(req)];
   for (const f of ["user", "host", "kind", "tier", "cls"]) if (req.query[f]) { where.push(`${f}=?`); args.push(req.query[f]); }
   const sql = `SELECT id,ts,src,host,user,kind,app,score,tier,action,cls,weight,detail FROM events
-               ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY ts DESC, id DESC LIMIT ?`;
-  res.json(db.prepare(sql).all(...args, limit).map(parseDetail));
+               WHERE ${where.join(" AND ")} ORDER BY ts DESC, id DESC LIMIT ?`;
+  res.json(db.prepare(sql).all(...args, limitOf(req)).map(parseDetail));
 });
 
 // --- alerts feed (historical) ---
 api.get("/alerts", (req, res) => {
-  const limit = Math.min(+req.query.limit || 100, 1000);
-  res.json(db.prepare(`SELECT * FROM alerts ORDER BY ts DESC, id DESC LIMIT ?`).all(limit));
+  res.json(db.prepare(`SELECT * FROM alerts WHERE ts>=? ORDER BY ts DESC, id DESC LIMIT ?`).all(sinceOf(req), limitOf(req)));
 });
 
 api.post("/alerts/:id/ack", (req, res) => {
@@ -102,6 +107,8 @@ api.post("/alerts/:id/ack", (req, res) => {
 api.get("/policy", (_req, res) => {
   const p = config.policy;
   res.json({ version: p.version, stream_score_threshold: p.stream_score_threshold,
+    llm: llmStatus, chat: chatStatus,
+    risk_actions: p.risk_actions, injection_action: p.injection_action, unapproved_model_bonus: p.unapproved_model_bonus,
     risk_window_hours: p.risk_window_hours, tiers: p.tiers, approved_models: p.approved_models, override_allowed: p.override_allowed,
     categories: config.indicators.categories, sanctioned: config.indicators.sanctioned });
 });

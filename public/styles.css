@@ -272,33 +272,120 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
 
-/* ---------- gateway playground ---------- */
+/* ---------- page nav ---------- */
+.nav { display: flex; gap: 4px; margin-left: 10px; }
+.nav a {
+  text-decoration: none; color: var(--muted); font-size: 13px; font-weight: 550;
+  padding: 6px 11px; border-radius: var(--radius-sm); border: 1px solid transparent;
+}
+.nav a:hover { color: var(--ink); }
+.nav a[aria-current="page"] { color: var(--ink); background: var(--amber-soft); border-color: var(--amber-line); }
+.nav a:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+/* ---------- forms ---------- */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-.form-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
-.form-row label { color: var(--muted); font-size: 12px; display: inline-flex; align-items: center; gap: 6px; }
 select, textarea {
   border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2);
   color: var(--ink); font: inherit; font-size: 13px; padding: 7px 10px;
 }
-textarea { width: 100%; resize: vertical; margin-bottom: 10px; display: block; }
-select:focus-visible, textarea:focus-visible, .chips button:focus-visible, .primary-btn:focus-visible {
+textarea { width: 100%; resize: vertical; display: block; }
+select:focus-visible, textarea:focus-visible, .chips button:focus-visible, .primary-btn:focus-visible, .ghost-btn:focus-visible {
   outline: 2px solid var(--amber); outline-offset: 1px;
 }
 .primary-btn {
   border: 1px solid var(--amber-line); background: var(--amber-soft); color: var(--ink);
-  border-radius: var(--radius-sm); padding: 7px 14px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+  border-radius: var(--radius-sm); padding: 7px 16px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
 }
 .primary-btn:hover { background: color-mix(in srgb, var(--amber) 28%, transparent); }
 .primary-btn[disabled] { opacity: .6; cursor: progress; }
-.chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chips button {
   border: 1px solid var(--border); background: transparent; color: var(--ink-2);
-  border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 11.5px; cursor: pointer;
+  border-radius: 999px; padding: 4px 11px; font: inherit; font-size: 12px; cursor: pointer;
 }
 .chips button:hover { border-color: var(--amber-line); color: var(--ink); }
-.result { margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); font-size: 13px; }
-.result .verdict { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
-.result .action { font-weight: 700; text-transform: uppercase; letter-spacing: .04em; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid currentColor; }
-.result .why { color: var(--ink); margin: 6px 0; }
-.result .meta { color: var(--muted); font-size: 12px; }
-.result pre { white-space: pre-wrap; word-break: break-word; font-family: var(--mono); font-size: 12px; margin: 6px 0 0; color: var(--ink-2); }
+.small { font-size: 12px; }
+.meta { color: var(--muted); font-size: 12px; }
+.action { font-weight: 700; text-transform: uppercase; letter-spacing: .04em; font-size: 11px; padding: 2px 9px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+
+/* ---------- AI gateway page ----------
+   Desktop: an app shell exactly one window tall; the chat thread and the side panel scroll on their own,
+   so any width or aspect ratio uses the space. Narrow or short screens: a normal scrolling page. */
+body.app { height: 100vh; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+body.app .topbar { position: static; flex: none; }
+main.gw {
+  flex: 1; min-height: 0; width: 100%; padding: 16px 22px;
+  display: grid; grid-template-columns: minmax(0, 1fr) clamp(290px, 30%, 420px); gap: var(--gap);
+}
+.chat { display: flex; flex-direction: column; min-height: 0; min-width: 0; padding: 0; }
+.chat-bar { display: flex; gap: 10px 14px; flex-wrap: wrap; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+.chat-bar label { color: var(--muted); font-size: 12px; display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.chat-bar select { min-width: 0; max-width: 100%; }
+/* the conversation stays a readable column (max ~860px) however wide the window is */
+.thread, .composer { padding-left: max(16px, calc((100% - 860px) / 2)); padding-right: max(16px, calc((100% - 860px) / 2)); }
+.thread { flex: 1; min-height: 0; overflow-y: auto; padding-top: 18px; padding-bottom: 18px; display: flex; flex-direction: column; gap: 12px; }
+.welcome { margin: auto; max-width: 520px; text-align: center; }
+.welcome h2 { font-size: 18px; color: var(--ink); margin-bottom: 6px; }
+.welcome p { color: var(--muted); margin: 0 0 14px; }
+.welcome .chips { justify-content: center; }
+.bubble { max-width: min(720px, 88%); padding: 10px 13px; border-radius: 12px; border: 1px solid var(--border); }
+.bubble .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.bubble .meta { margin-top: 6px; }
+.bubble.user { align-self: flex-end; background: var(--surface-2); }
+.bubble.assistant { align-self: flex-start; background: transparent; }
+.bubble.error { align-self: center; color: var(--critical); border-color: color-mix(in srgb, var(--critical) 40%, var(--border)); font-size: 13px; }
+.verdict-card { margin-top: 9px; padding-top: 9px; border-top: 1px solid var(--border-2); font-size: 13px; }
+.verdict-card .verdict { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.verdict-card .why { color: var(--ink-2); margin: 6px 0 0; }
+.verdict-card pre { white-space: pre-wrap; word-break: break-word; font-family: var(--mono); font-size: 12px; margin: 6px 0 0; color: var(--ink-2); }
+.verdict-card details { margin-top: 6px; }
+.verdict-card summary { color: var(--muted); font-size: 12px; cursor: pointer; }
+.composer { flex: none; border-top: 1px solid var(--border); padding-top: 12px; padding-bottom: 12px; }
+.composer textarea { max-height: 30vh; }
+.composer-foot { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.draft { flex: 1; min-width: 0; font-size: 12px; color: var(--ink-2); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; min-height: 22px; }
+
+.side { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; min-height: 0; overflow-y: auto; }
+.side .card { flex: none; min-width: 0; }
+.side p { margin: 0 0 8px; }
+.scale { display: flex; gap: 3px; margin-bottom: 12px; }
+.band { min-width: 0; padding: 6px 6px 5px; border-radius: 6px; border-top: 3px solid var(--c); background: var(--surface-2); overflow: hidden; }
+.band-name { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--c); overflow: hidden; text-overflow: ellipsis; }
+.band-range { display: block; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.rules { margin: 0 0 12px; padding-left: 18px; color: var(--ink-2); font-size: 12.5px; display: grid; gap: 5px; }
+.label-sm { color: var(--muted); font-size: 11.5px; margin-bottom: 6px; }
+.history { display: grid; gap: 2px; max-height: 300px; overflow-y: auto; }
+.hist-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 9px; padding: 8px 0; border-bottom: 1px solid var(--border-2); align-items: start; }
+.hist-item .hist-text { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-item .meta { grid-column: 2; }
+.snippet { margin: 0; padding: 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  font-family: var(--mono); font-size: 11.5px; white-space: pre; overflow-x: auto; max-width: 100%; color: var(--ink-2); }
+.privacy { margin: 0; text-align: center; }
+
+/* tablets, phones and short landscape screens: one column, the page scrolls */
+@media (max-width: 900px), (max-height: 560px) {
+  body.app { height: auto; overflow: visible; }
+  main.gw { grid-template-columns: minmax(0, 1fr); padding: 12px; }
+  .chat { height: 85vh; height: 85dvh; min-height: 380px; }
+  .side { overflow: visible; }
+}
+@media (max-width: 480px) {
+  .chat-bar label { flex: 1 1 100%; }
+  .chat-bar select { flex: 1; }
+  .bubble { max-width: 94%; }
+  .composer-foot { flex-wrap: wrap; }
+  .composer-foot .primary-btn { margin-left: auto; }
+}
+
+/* top bar on narrow screens: wrap instead of overflowing; nav gets its own row */
+@media (max-width: 760px) {
+  .topbar { flex-wrap: wrap; row-gap: 10px; }
+  .nav { order: 10; flex: 1 1 100%; margin-left: 0; }
+  .nav a { flex: 1; text-align: center; }
+  .pill { max-width: 100%; }
+  .pill-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+@media (max-width: 480px) {
+  #chatPill { display: none; }
+  .brand .name { font-size: 16px; }
+}
