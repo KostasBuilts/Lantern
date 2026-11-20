@@ -269,7 +269,7 @@ function addFeedItem(a, flash = true) {
         document.createTextNode(a.app ? " · " + a.app : ""),
       ]),
     ]),
-    el("span", { class: "when", text: ago(a.ts) + " ago" }),
+    el("span", { class: "when", "data-ts": a.ts, text: ago(a.ts) + " ago" }),
   ]);
   feed.prepend(item);
   while (feed.children.length > 60) feed.lastElementChild.remove();
@@ -382,6 +382,10 @@ async function boot() {
   await Promise.all([loadStats(), loadChart(), loadApps(), loadUsers(), loadEvents(), loadFeed()]);
   $("#updated").textContent = "updated " + hhmm(new Date());
   connectStream();
-  setInterval(() => { loadStats(); loadChart(); loadApps(); loadUsers(); loadEvents(); $("#updated").textContent = "updated " + hhmm(new Date()); }, 15000);
+  setInterval(() => {
+    loadStats(); loadChart(); loadApps(); loadUsers(); loadEvents();
+    for (const w of document.querySelectorAll("#feed .when[data-ts]")) w.textContent = ago(w.dataset.ts) + " ago";
+    $("#updated").textContent = "updated " + hhmm(new Date());
+  }, 15000);
 }
 boot();
